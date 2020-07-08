@@ -1,0 +1,1858 @@
+---
+title: "health_is_political"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(readxl)
+library(corrr)
+library(corrplot)
+library(tidycensus)
+library(boot)
+library(broom)
+library(lubridate)
+library(gridExtra)
+
+###################################### Paths
+#Source: https://data.opendatasoft.com/explore/dataset/usa-2016-presidential-election-by-county%40public/export/
+#https://www.nytimes.com/elections/2016/results/president
+#https://openpsych.net/paper/12
+voter_info_data <- "~/data_health_voting/usa-2016-presidential-election-by-county.csv"
+
+##Alternative source for data: https://electionlab.mit.edu/data
+#DOI here: https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/VOQCHQ
+vote_county_data <- "~/data_health_voting/countypres_2000-2016.csv"
+
+
+#Source: https://data.world/niccolley/us-zipcode-to-county-state
+zip_county_data <- "~/data_health_voting/ZIP-COUNTY-FIPS_2016-12.csv"
+
+#Source: https://www.countyhealthrankings.org/
+county_health_data_2019 <- "~/data_health_voting/2019_county_health_data.xlsx"
+county_health_data_2010 <- "~/data_health_voting/2010_county_health_data.xlsx"
+
+
+#Diabetes, Obesity, physical inactivity data
+#Source CDC: https://gis.cdc.gov/grasp/diabetes/DiabetesAtlas.html#, https://www.cdc.gov/diabetes/data/index.html
+#How they were calculated: https://www.cdc.gov/diabetes/data/statistics/faqs.html
+diabetes_atlas_data <- "~/data_health_voting/Diabetes_2004_2016.xlsx"
+obesity_atlas_data <- "~/data_health_voting/Obesity_2004_2016.xlsx"
+phys_inact_atlas_data <- "~/data_health_voting/Physical_inactivity_2004_2016.xlsx"
+
+#Crude data
+diabetes_crude_atlas_data <- "~/data_health_voting/Diabetes_Crude_2006_2016.xlsx"
+obesity_crude_atlas_data <- "~/data_health_voting/obesity_crude.xlsx"
+phys_inact_crude_atlas_data <- "~/data_health_voting/physical_inactivity_crude.xlsx"
+
+#GBD paths, mortality
+respiratory_diseases_data <- "~/data_health_voting/IHME_USA_COUNTY_RESP_DISEASE_MORTALITY_1980_2014_NATIONAL_Y2017M09D26.XLSX"
+infectious_diseases_data <- "~/data_health_voting/IHME_USA_COUNTY_INFECT_DIS_MORT_1980_2014_NATIONAL_Y2018M03D27.XLSX"
+cvd_diseases_data <- "~/data_health_voting/IHME_USA_COUNTY_CVD_MORTALITY_RATES_1980_2014_NATIONAL_Y2017M05D16.XLSX"
+le_mortaliity_risk_data <- "~/data_health_voting/IHME_USA_COUNTY_LE_MORTALITY_RISK_1980_2014_NATIONAL_Y2017M05D08.XLSX"
+cancer_data <- "~/data_health_voting/IHME_USA_COUNTY_CANCER_MORTALITY_RATES_1980_2014_NATIONAL_Y2017M01D24.XLSX"
+deaths_of_despair_data <- "~/data_health_voting/IHME_USA_COUNTY_USE_INJ_MORTALITY_1980_2014_NATIONAL_Y2018M03D13.XLSX"
+sum_deaths_data <- "~/data_health_voting/IHME_USA_COUNTY_MORTALITY_RATES_1980_2014_NATIONAL_Y2016M12D13.XLSX"
+
+#medicare healthcare costs
+medicare_costs_data <- "~/data_health_voting/State County All Table 2017.xlsx"
+
+#Opioid Prescribing Rate: 2017 opioid prescribing rates
+cdc_prescribing_opioid_data <- "~/data_health_voting/cdc_opioid_prescribing_rates.xlsx"
+
+#Census Median Age and population
+pop_age_data <- "~/data_health_voting/population_and_age.csv"
+
+#Unemployment rate (get it from BLS): Source: https://www.bls.gov/lau/#cntyaa
+bls_path <- "~/data_health_voting/labor_force_bls.xlsx"
+
+#SAHIE data
+#Sources: https://www.census.gov/content/dam/Census/library/publications/2019/demo/p30-05.pdf
+#https://www.census.gov/data-tools/demo/sahie/#/?s_iprcat=0&map_yearSelector=2008&s_year=2017,2016,2015,2014,2013,2012,2011,2010,2009,2008&s_racecat=0
+SAHIE_data_1 <- "~/data_health_voting/SAHIE_08JAN20_13_49_43_32.csv"
+SAHIE_data_2 <- "~/data_health_voting/SAHIE_08JAN20_13_55_04_87.csv"
+SAHIE_data_3 <- "~/data_health_voting/SAHIE_08JAN20_13_58_30_44.csv"
+
+#County Health Rankings data
+chr_trends_data <- "~/data_health_voting/CHR_TRENDS_CSV_2019.csv"
+
+#County health rankings, processed data
+chr_2019_data <- "~/data_health_voting/2019 County Health Rankings Data.xls"
+
+#Medicaid variables (from acs5)
+medicaid_var_data <- "~/data_health_voting/medicaid_variables.csv"
+
+#ACS variables
+acs_data <- "~/data_health_voting/acs_variables.csv"
+acs_vars_info <- "~/data_health_voting/acs_vairables.xlsx"
+
+#categories
+county_health_category_data <- "~/data_health_voting/county_health_variable_categories.xlsx"
+
+#Compare states on Medicaid expansion- Medicaid data: https://data.medicaid.gov/widgets/n5ce-jxme
+medicaid_expansion_data <- "~/data_health_voting/State_Medicaid_and_CHIP_Applications__Eligibility_Determinations__and_Enrollment_Data.csv"
+
+#State election data
+state_election_data <- "~/data_health_voting/1976-2016-president.csv"
+
+#Preexisting conditions by state
+preexiting_state_data <- "~/data_health_voting/pre-existing-conditions-by-congressional-district.xlsx"
+
+######################################States
+flip_states <- c("Michigan", "Pennsylvania", "Wisconsin", "Maine")
+battle_states <- c("Arizona", "Florida", "Maine", "Michigan", "Minnesota", "Nebraska", "New Hampshire", "North Carolina", "Pennsylvania", "Wisconsin")
+
+states_obama_won_by_lessthan_10 <- 
+  c("Nevada", "Colorado", "Virginia", "Florida", "Michigan", "Minnesota", "Wisconsin", "Iowa", "New Hampshire", "Ohio", "Pennsylvania")
+
+####################################Read in data
+#zip
+zip_county <- read_csv(zip_county_data)
+
+#voter
+voter_info <- 
+  read_delim(voter_info_data, delim = ";") %>% 
+  select(-c(`Geo Shape`, `Lat Bins`, `Lon Bins`, `Precip Bins`, `Elevation Bins`))
+
+vote_county <- read_csv(vote_county_data)
+
+#county health covariates
+county_health_2019 <- read_xlsx(county_health_data_2019)
+county_health_2010 <- read_xlsx(county_health_data_2010)
+```
+
+
+
+Read in 2012 and 2016 voter data
+
+```{r}
+vote_county_2012_2016 <- 
+  vote_county %>% 
+  filter(
+    year == 2016
+  ) %>% 
+  select(-c(party, version)) %>% 
+  spread(candidate, candidatevotes) %>% 
+  mutate(
+    prct_trump_2016 = `Donald Trump` / totalvotes,
+    prct_clinton_2016 = `Hillary Clinton` / totalvotes
+  ) %>% 
+  rename("totalvotes_2016" = totalvotes) %>% 
+  select(state:totalvotes_2016, prct_trump_2016, prct_clinton_2016) %>% 
+  left_join(
+    vote_county %>% 
+    filter(
+      year == 2012
+    ) %>% 
+    select(-c(party, version)) %>% 
+    spread(candidate, candidatevotes) %>% 
+    mutate(
+      prct_obama_2012 = `Barack Obama` / totalvotes,
+      prct_romney_2012 = `Mitt Romney` / totalvotes
+    ) %>% 
+    rename("totalvotes_2012" = totalvotes) %>% 
+    select(state:totalvotes_2012, prct_romney_2012, prct_obama_2012),
+    by = c("state", "state_po", "county", "FIPS", "office")
+  ) %>% 
+  mutate(FIPS = as.character(FIPS))
+
+```
+
+
+Preprocess county health data
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+county_health_2019 <- 
+  county_health_2019 %>% 
+  mutate_at(vars(HealthOutcomes_Rank:PhysicalEnvironment_Quartile), as.integer) %>% 
+  mutate(
+    FIPS = as.numeric(FIPS) %>% as.character(),
+    Drinkinig_Water_Violations = as.integer(Drinkinig_Water_Violations)
+  ) 
+```
+
+
+
+#CDC Diabetes, obesity, physical inactivity
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+read_atlas <- function(atlas_name){
+  
+  excel_sheets(atlas_name) %>% 
+  map_df(~ read_xlsx(atlas_name, sheet = ., skip = 2) %>% mutate(year = .x)) %>% 
+  mutate_at(vars(Percentage:year), as.numeric) %>% 
+  mutate(CountyFIPS = as.character(CountyFIPS))
+}
+
+diabetes_atlas <- read_atlas(diabetes_atlas_data)
+obesity_atlas <- read_atlas(obesity_atlas_data)
+phys_inact_atlas <- read_atlas(phys_inact_atlas_data)
+```
+
+
+This is thee same data, except crude
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+read_atlas <- function(atlas_name){
+  
+  excel_sheets(atlas_name) %>% 
+  map_df(~ read_xlsx(atlas_name, sheet = ., skip = 2) %>% mutate(year = .x)) %>% 
+  mutate_at(vars(Percentage:year), as.numeric) %>% 
+  mutate(CountyFIPS = as.character(CountyFIPS))
+}
+
+diabetes_crude_atlas <- read_atlas(diabetes_crude_atlas_data)
+obesity_crude_atlas <- read_atlas(obesity_crude_atlas_data)
+phys_inact_crude_atlas <- read_atlas(phys_inact_crude_atlas_data)
+
+all_crude_cdc_atlas <- 
+  diabetes_crude_atlas %>% 
+  select(CountyFIPS, year, diabetes_crude = Percentage) %>% 
+  left_join(
+    obesity_crude_atlas %>% 
+    select(CountyFIPS, year, obesity_crude = Percentage),
+    by = c("CountyFIPS", "year")
+  ) %>% 
+  left_join(
+    phys_inact_crude_atlas %>% 
+    select(CountyFIPS, year, physical_inactivity_crude = Percentage),
+    by = c("CountyFIPS", "year")
+  )
+```
+
+
+
+#Mortality data from GBD
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+#function to read in mortality files
+read_mortality_files <- function(mortality_path){
+  
+  excel_sheets(mortality_path)  %>% 
+  map_df(
+    ~ read_xlsx(mortality_path, sheet = ., skip = 1) %>% mutate(disease = .x)
+  ) %>% 
+  gather(-c(Location, FIPS, disease), key = "key", value = "value") %>% 
+  separate(value, sep = " ", into = c("value", NA)) %>% 
+  mutate(value = as.double(value)) %>% 
+  spread(key, value)  
+}
+
+respiratory_diseases <- read_mortality_files(respiratory_diseases_data)
+infectious_diseases <- read_mortality_files(infectious_diseases_data)
+cvd_diseases <- read_mortality_files(cvd_diseases_data)
+le_mortaliity_risk <- read_mortality_files(le_mortaliity_risk_data)
+cancer <- read_mortality_files(cancer_data)
+deaths_of_despair <- read_mortality_files(deaths_of_despair_data)
+sum_deaths <- read_mortality_files(sum_deaths_data)
+```
+
+
+#Medicare Healthcare costs
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+healthcare_cost_vars <- function(file_name){
+  read_xlsx(medicare_costs_data, sheet = file_name, skip = 1) %>% 
+  select(
+      State, County, `State and County FIPS Code`, `Beneficiaries with Part A and Part B`, 
+      `Average Age`, `Percent Female`, `Percent Male`, `Percent Eligible for Medicaid`, `Average HCC Score`,
+      `Total Actual Costs`, `Total Standardized Costs`, `Total Standardized Risk-Adjusted Costs`,
+      `Actual Per Capita Costs`, `Standardized Per Capita Costs`, `Standardized Risk-Adjusted Per Capita Costs`, 
+      `Outpatient Dialysis Facility Actual Costs`, `Outpatient Dialysis Facility Standardized Costs`,
+      `# Outpatient Dialysis Facility Users`, `Tests Actual Costs`, `Tests Per Capita Actual Costs`, `# Test Users`,
+      `Hospice Per Capita Actual Costs`, `Hospice Standardized Costs`, `Outpatient Dialysis Facility Actual Costs`,
+      `Outpatient Dialysis Facility Per Capita Actual Costs`, `# Outpatient Dialysis Facility Users`,
+      `Procedures Actual Costs`, `Procedures Per Capita Actual Costs`, `Imaging Actual Costs`, `Imaging Per Capita Actual Costs`,
+      `Tests Actual Costs`, `Tests Per Capita Actual Costs`, `# Ambulance Users`, `Part B Drugs Actual Costs`, 
+      `Emergency Department Visits`, `Hospital Readmission Rate`, `Outpatient Dialysis Facility Actual Costs as % of Total Actual Costs`,
+      `% of Beneficiaries Using Outpatient Dialysis Facility`
+  ) %>% 
+  mutate_at(
+    vars(`Beneficiaries with Part A and Part B`, `Average Age`, `Average HCC Score`:`Emergency Department Visits`),
+    as.double
+  ) %>% 
+  mutate_at(
+    vars(
+      `Percent Female`, `Percent Male`, `Percent Eligible for Medicaid`, `Hospital Readmission Rate`, 
+         `Outpatient Dialysis Facility Actual Costs as % of Total Actual Costs`, `% of Beneficiaries Using Outpatient Dialysis Facility`
+    ),
+    ~ str_replace(., " %", "") %>% as.numeric() 
+  ) %>% 
+   mutate_at(
+    vars(
+      `Percent Female`, `Percent Male`, `Percent Eligible for Medicaid`, `Hospital Readmission Rate`, 
+         `Outpatient Dialysis Facility Actual Costs as % of Total Actual Costs`, `% of Beneficiaries Using Outpatient Dialysis Facility`
+    ),
+    funs(. / 100)
+  )
+} 
+
+cost2007 <- healthcare_cost_vars("State_county 2007") %>% mutate(year = 2007)
+cost2008 <- healthcare_cost_vars("State_county 2008") %>% mutate(year = 2008)
+cost2009 <- healthcare_cost_vars("State_county 2009") %>% mutate(year = 2009)
+cost2010 <- healthcare_cost_vars("State_county 2010") %>% mutate(year = 2010)
+cost2011 <- healthcare_cost_vars("State_county 2011") %>% mutate(year = 2011)
+cost2012 <- healthcare_cost_vars("State_county 2012") %>% mutate(year = 2012)
+cost2013 <- healthcare_cost_vars("State_county 2013") %>% mutate(year = 2013)
+cost2014 <- healthcare_cost_vars("State_county 2014") %>% mutate(year = 2014)
+cost2015 <- healthcare_cost_vars("State_county 2015") %>% mutate(year = 2015)
+cost2016 <- healthcare_cost_vars("State_county 2016") %>% mutate(year = 2016)
+cost2017 <- healthcare_cost_vars("State_county 2017") %>% mutate(year = 2017)
+
+health_costs <- 
+  cost2007 %>% 
+  rbind(cost2008) %>% 
+  rbind(cost2009) %>% 
+  rbind(cost2010) %>% 
+  rbind(cost2011) %>% 
+  rbind(cost2012) %>% 
+  rbind(cost2013) %>% 
+  rbind(cost2014) %>% 
+  rbind(cost2015) %>% 
+  rbind(cost2016) %>% 
+  rbind(cost2017)
+```
+
+
+#Opioid Prescribing Rate: 2017 opioid prescribing rates
+
+```{r}
+opioid_rates <- 
+  read_xlsx(cdc_prescribing_opioid_data) %>% 
+  select("FIPS" = `State/County FIPS Code`, opioid_prescribing_rate = `2017`)
+```
+
+
+#Census Median Age and population
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+pop_age <- read_csv(pop_age_data)
+
+pop_age <- 
+  pop_age %>% 
+  mutate(GEOID = as.numeric(GEOID) %>% as.character()) %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate)
+```
+
+
+#Unemployment rate (get it from BLS): Source: https://www.bls.gov/lau/#cntyaa
+
+```{r}
+bls_unemploy <- 
+  excel_sheets(bls_path)  %>% 
+  map_df( ~ read_xlsx(bls_path, sheet = ., skip = 1) %>% 
+      mutate_at(
+        vars(State, County, Year), 
+        as.character
+      )
+  ) 
+```
+
+
+#SAHIE data
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+sahie_insurance <- 
+  read_csv(SAHIE_data_1) %>% 
+  rbind(read_csv(SAHIE_data_2)) %>% 
+  rbind(read_csv(SAHIE_data_3)) %>% 
+  mutate(ID = as.numeric(ID) %>% as.character())
+```
+
+
+
+#County Health Rankings data
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+#Trend data
+chr_trends <- read_csv(chr_trends_data)
+
+#out of 15 trends, look at these
+trend_measures <- 
+  c(
+    "Primary care physicians", 
+    "Preventable hospital stays", 
+    "Premature death",
+    "Air pollution - particulate matter",
+    "Flu vaccinations",
+    "Dentists"
+  )
+```
+
+
+#County health rankings, processed data
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+chr_processed_2019 <- read_xls(chr_2019_data, sheet = 4, skip = 1)
+chr_morevars_2019 <- read_xls(chr_2019_data, sheet = 6, skip = 1)
+```
+
+
+Select county health rankings data that we will use
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+chr_more_vars_keep <- 
+  c(
+    "FIPS", "County", "Life Expectancy", "Life Expectancy (Black)", "Life Expectancy (White)",
+    "Age-Adjusted Mortality", "Age-Adjusted Mortality (Black)", "Age-Adjusted Mortality (White)",
+    "Child Mortality Rate", "Infant Mortality Rate", "% Frequent Physical Distress", "% Frequent Mental Distress",
+    "HIV Prevalence Rate", "% Food Insecure", "% Food Insecure", "Drug Overdose Mortality Rate",
+    "MV Mortality Rate", "% Insufficient Sleep", "% Disconnected Youth", "Household Income",
+    "Segregation Index", "Firearm Fatalities Rate", "% Homeowners", "% Severe Housing Cost Burden",
+    "Population", "% 65 and over", "% Non-Hispanic White", "% Rural"
+  )
+
+chr_processed_vars_keep <- 
+  c(
+    "FIPS", "County", "Years of Potential Life Lost Rate", "YPLL Rate (Black)", "YPLL Rate (White)",
+    "% Fair/Poor", "Physically Unhealthy Days", "Mentally Unhealthy Days", "% LBW",
+    "% Smokers", "Food Environment Index", "% With Access", "% Excessive Drinking",
+    "Teen Birth Rate", "PCP Rate", "Dentist Rate", "MHP Rate", "Preventable Hosp. Rate",
+    "% Screened", "% Vaccinated", "Graduation Rate", "% Some College", "% Children in Poverty",
+    "Income Ratio", "% Single-Parent Households", "Association Rate", "Violent Crime Rate",
+    "Injury Death Rate", "% Severe Housing Problems"
+  )
+
+
+county_health_ranks <- 
+  chr_processed_2019 %>% 
+  select(chr_processed_vars_keep) %>% 
+  left_join(
+    chr_morevars_2019 %>% 
+    select(chr_more_vars_keep),
+    by = c("FIPS", "County")
+  ) %>% 
+  mutate(FIPS = as.numeric(FIPS) %>% as.character())
+```
+
+
+Select the CDC atlass data
+
+```{r}
+cdc_atlas_2016 <- 
+  diabetes_atlas %>% 
+  filter(year == "2016") %>% 
+  select(CountyFIPS, `Diabetes %` = Percentage) %>% 
+  left_join(
+    phys_inact_atlas %>% 
+    filter(year == "2016") %>% 
+    select(CountyFIPS, `Physical Inactive %` = Percentage),
+    by = c("CountyFIPS")
+  ) %>% 
+  left_join(
+    obesity_atlas %>% 
+    filter(year == "2016") %>% 
+    select(CountyFIPS, `Obesity %` = Percentage),
+    by = c("CountyFIPS")
+  )
+```
+
+
+
+Select the GBD data
+
+```{r}
+GBD_diseases <- 
+  respiratory_diseases %>% 
+  filter(!is.na(FIPS)) %>% 
+  select(FIPS, disease, `Mortality Rate, 2014*`) %>% 
+  spread(disease, `Mortality Rate, 2014*`) %>% 
+  mutate(FIPS = as.character(FIPS)) %>% 
+  left_join(
+    infectious_diseases %>%
+    filter(!is.na(FIPS)) %>%
+    select(FIPS, disease, `Mortality Rate, 2014*`) %>% 
+    spread(disease, `Mortality Rate, 2014*`) %>% 
+    mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  ) %>% 
+  left_join(
+    cvd_diseases %>% 
+    filter(!is.na(FIPS)) %>%
+    select(FIPS, disease, `Mortality Rate, 2014*`) %>% 
+    spread(disease, `Mortality Rate, 2014*`) %>% 
+    mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  ) %>% 
+  left_join(
+    cancer %>% 
+    filter(!is.na(FIPS)) %>%
+    select(FIPS, disease, `Mortality Rate, 2014*`) %>% 
+    spread(disease, `Mortality Rate, 2014*`) %>% 
+    mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  ) %>%
+  left_join(
+    deaths_of_despair %>% 
+    filter(!is.na(FIPS)) %>%
+    select(FIPS, disease, `Mortality Rate, 2014*`) %>% 
+    spread(disease, `Mortality Rate, 2014*`) %>% 
+    mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  ) %>%
+  left_join(
+    le_mortaliity_risk %>% 
+    filter(disease != "Life expectancy") %>% 
+    filter(!is.na(FIPS)) %>% 
+    select(FIPS, disease, `Mortality risk, 2014*`)  %>% 
+    spread(disease, `Mortality risk, 2014*`) %>% 
+    mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  ) %>% 
+  mutate_at(vars(Asbestosis:`Mortality risk, age 65-85`), as.numeric)
+```
+
+
+
+Health costs variables to keep
+
+```{r}
+health_costs_keep <- 
+  c(
+    "State and County FIPS Code", "Part B Drugs Actual Costs", "Emergency Department Visits", "Imaging Per Capita Actual Costs",
+    "Procedures Per Capita Actual Costs", "Hospice Per Capita Actual Costs", "Tests Per Capita Actual Costs",
+    "Actual Per Capita Costs", "Percent Eligible for Medicaid", "Percent Male", "Percent Female"
+  )
+```
+
+
+Insurance rates
+
+```{r}
+sahie_ins <- 
+  sahie_insurance %>% 
+  filter(Year == 2016) %>% 
+  select(ID, `Income Category`, `Uninsured: %`) %>% 
+  spread(`Income Category`, `Uninsured: %`) %>% 
+  rename(
+    `Uninsured %: <= 138% of Poverty` = `<= 138% of Poverty`,
+    `Uninsured %: <= 400% of Poverty` = `<= 400% of Poverty`,
+    `Uninsured %: All Incomes` = `All Incomes`
+  )
+```
+
+
+Unemployment
+
+```{r}
+bls_unemploy_for <- 
+  bls_unemploy %>% 
+  filter(Year == 2016) %>% 
+  mutate(FIPS = substr(LAUS, 3, 7) %>% as.numeric() %>% as.character()) %>% 
+  select(FIPS, `Unemployment Rate`)
+```
+
+
+#Medicaid variables (from acs5)
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+medicaid <- read_csv(medicaid_var_data)
+
+medicaid <- 
+  medicaid %>% 
+  mutate(GEOID = as.numeric(GEOID) %>% as.character())
+
+medicaid_var <- 
+  medicaid %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate) %>% 
+  mutate(
+    prct_male_under_18_medicaid = C27007_004 / C27007_003,
+    prct_male_18_64_medicaid = C27007_007 / C27007_006,
+    prct_male_over_64_medicaid = C27007_010 / C27007_009,
+    prct_male_medicaid = (C27007_004 + C27007_007 + C27007_010) / C27007_002,
+    prct_female_under_18_medicaid = C27007_014 / C27007_013,
+    prct_female_18_64_medicaid = C27007_017 / C27007_016,
+    prct_female_over_64_medicaid = C27007_020 / C27007_019,
+    prct_female_medicaid = (C27007_014 + C27007_017 + C27007_020) / C27007_012
+  ) %>% 
+  select(
+    GEOID,
+    prct_male_under_18_medicaid,
+    prct_male_18_64_medicaid,
+    prct_male_over_64_medicaid,
+    prct_male_medicaid,
+    prct_female_under_18_medicaid,
+    prct_female_18_64_medicaid,
+    prct_female_over_64_medicaid,
+    prct_female_medicaid
+  )
+```
+
+
+#tidycensus data (how we pulled ACS, medicaiid data etc)
+```{r}
+# library(tidycensus)
+# 
+# census_api_key("Insert your API Key", install = TRUE, overwrite=TRUE)
+# pop_age <- get_acs(geography = "county", variables = c("B01003_001", "B01002_001"), year = 2016) 
+# pop_age %>% write_csv("~/Downloads/population_and_age.csv")
+# 
+# medicare_vars <- 
+#   load_variables(2016, "acs5", cache = TRUE) %>% 
+#   filter(str_detect(concept, "MEDICAID")) %>% 
+#   pull(name)
+# 
+# medicaid <- get_acs(geography = "county", variables = medicare_vars, year = 2016) 
+# medicaid %>% write_csv("~/Downloads/medicaid_variables.csv")
+# 
+# acs_vars <- read_xlsx("~/Downloads/acs_vairables.xlsx", sheet = 1)
+# acs <- get_acs(geography = "county", variables = acs_vars$name, year = 2016) 
+# acs %>% write_csv("~/Downloads/acs_variables.csv")
+```
+
+
+#ACS variables
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+acs_vars <- read_xlsx(acs_vars_info, sheet = 1)
+acs <- read_csv(acs_data)
+
+acs_varriable_names <- 
+  read_xlsx("~/Downloads/acs_vairables.xlsx", sheet = 1) %>% 
+  distinct(name, label, concept)
+
+acs_est <- 
+  acs %>% 
+  mutate(GEOID = as.numeric(GEOID) %>% as.character()) %>% 
+  select(GEOID, variable, estimate) %>% 
+  left_join(
+    acs_varriable_names,
+    by = c("variable" = "name")
+  )
+```
+
+
+ACS filtering 
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+disability_vars_white <- 
+  c("B18101A_003", "B18101A_002", "B18101A_005", "B18101A_006", "B18101A_008", "B18101A_009")
+
+disability_vars_white_not_hispanic <- 
+  c("B18101H_003", "B18101H_002", "B18101H_005", "B18101H_006", "B18101H_008", "B18101H_009")
+
+#"B18101A_003":Estimate!!Total!!Under 18 years!!With a disability
+#"B18101A_002":Estimate!!Total!!Under 18 years
+#"B18101A_005":Estimate!!Total!!18 to 64 years
+#"B18101A_006":Estimate!!Total!!18 to 64 years!!With a disability
+#"B18101A_008":Estimate!!Total!!65 years and over
+#"B18101A_009":Estimate!!Total!!65 years and over!!With a disability
+
+
+
+#No high school and insurance
+no_highs_ins <- c("B27019_003", "B27019_004", "B27019_005", "B27019_006", "B27019_007")
+
+#"B27019_003"	Estimate!!Total!!25 to 64 years!!Less than high school graduate
+#"B27019_004"	Estimate!!Total!!25 to 64 years!!Less than high school graduate!!With health insurance coverage
+#"B27019_005"	Estimate!!Total!!25 to 64 years!!Less than high school graduate!!With health insurance coverage!!With private health insurance
+#"B27019_006"	Estimate!!Total!!25 to 64 years!!Less than high school graduate!!With health insurance coverage!!With public coverage
+#"B27019_007"	Estimate!!Total!!25 to 64 years!!Less than high school graduate!!No health insurance coverage
+
+no_hs_25_64_ins <- 
+  acs_est %>% 
+  filter(variable %in% no_highs_ins) %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate) %>% 
+  mutate(
+    prcnt_no_highs_25_64_with_ins = B27019_004 / B27019_003,
+    prcnt_no_highs_25_64_with_private_ins = B27019_005 / B27019_003,
+    prcnt_no_highs_25_64_with_public_ins = B27019_006 / B27019_003
+  ) %>% 
+  select(
+    GEOID, 
+    prcnt_no_highs_25_64_with_ins, 
+    prcnt_no_highs_25_64_with_private_ins, 
+    prcnt_no_highs_25_64_with_public_ins
+  )
+
+
+#Yes hs and insurance
+yes_highs_ins <- c("B27019_008", "B27019_009", "B27019_010", "B27019_011")
+
+#B27019_008	Estimate!!Total!!25 to 64 years!!High school graduate (includes equivalency)
+#B27019_009	Estimate!!Total!!25 to 64 years!!High school graduate (includes equivalency)!!With health insurance coverage
+#B27019_010	Estimate!!Total!!25 to 64 years!!High school graduate (includes equivalency)!!With health insurance coverage!!With private health insurance
+#B27019_011	Estimate!!Total!!25 to 64 years!!High school graduate (includes equivalency)!!With health insurance #coverage!!With public coverage
+yes_hs_25_64_ins <- 
+  acs_est %>% 
+  filter(variable %in% yes_highs_ins) %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate) %>% 
+  mutate(
+    prcnt_yes_highs_25_64_with_ins = B27019_009 / B27019_008,
+    prcnt_yes_highs_25_64_with_private_ins = B27019_010 / B27019_008,
+    prcnt_yes_highs_25_64_with_public_ins = B27019_011 / B27019_008
+  ) %>% 
+  select(
+    GEOID, 
+    prcnt_yes_highs_25_64_with_ins, 
+    prcnt_yes_highs_25_64_with_private_ins, 
+    prcnt_yes_highs_25_64_with_public_ins
+  )
+
+
+#bachelors or higher
+bachelor_ins <- c("B27019_018", "B27019_019", "B27019_020", "B27019_021")
+
+#B27019_018	Estimate!!Total!!25 to 64 years!!Bachelor's degree or higher
+#B27019_019	Estimate!!Total!!25 to 64 years!!Bachelor's degree or higher!!With health insurance coverage
+#B27019_020	Estimate!!Total!!25 to 64 years!!Bachelor's degree or higher!!With health insurance coverage!!With private health insurance
+#B27019_021	Estimate!!Total!!25 to 64 years!!Bachelor's degree or higher!!With health insurance coverage!!With public coverage
+#B27019_022	Estimate!!Total!!25 to 64 years!!Bachelor's degree or higher!!No health insurance coverage
+
+bachelor_25_64_ins <- 
+  acs_est %>% 
+  filter(variable %in% bachelor_ins) %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate) %>% 
+  mutate(
+    prcnt_bachelor_25_64_with_ins = B27019_019 / B27019_018,
+    prcnt_bachelor_25_64_with_private_ins = B27019_020 / B27019_018,
+    prcnt_bachelor_25_64_with_public_ins = B27019_021 / B27019_018
+  ) %>% 
+  select(
+    GEOID, 
+    prcnt_bachelor_25_64_with_ins, 
+    prcnt_bachelor_25_64_with_private_ins, 
+    prcnt_bachelor_25_64_with_public_ins
+  )
+
+
+wnh_dis <- 
+  acs_est %>% 
+  filter(variable %in% disability_vars_white_not_hispanic) %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate) %>% 
+  mutate(
+    wnh_prcnt_18_dis = B18101H_003 / B18101H_002,
+    wnh_prcnt_18_64_dis = B18101H_006 / B18101H_005,
+    wnh_prcnt_65_dis = B18101H_009 / B18101H_008
+  ) %>% 
+  select(GEOID, wnh_prcnt_18_dis, wnh_prcnt_18_64_dis, wnh_prcnt_65_dis)
+
+w_dis <- 
+  acs_est %>% 
+  filter(variable %in% disability_vars_white) %>% 
+  select(GEOID, variable, estimate) %>% 
+  spread(variable, estimate) %>% 
+  mutate(
+    w_prcnt_18_dis = B18101A_003 / B18101A_002,
+    w_prcnt_18_64_dis = B18101A_006 / B18101A_005,
+    w_prcnt_65_dis = B18101A_009 / B18101A_008
+  ) %>% 
+  select(GEOID, w_prcnt_18_dis, w_prcnt_18_64_dis, w_prcnt_65_dis)
+```
+
+
+All disease data- put it together
+
+```{r}
+all_disease <- 
+  all_crude_cdc_atlas %>% 
+  filter(year == 2016) %>% 
+  select(-year) %>% 
+  rename("FIPS" = CountyFIPS) %>% 
+  full_join(
+    county_health_ranks %>% 
+      select(-County),
+    by = c("FIPS")
+  ) %>% 
+  full_join(
+    GBD_diseases,
+    by = c("FIPS")
+  ) %>% 
+  full_join(
+    opioid_rates %>% 
+      mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  )
+```
+
+
+#Correlate all of the public health data with voting
+
+```{r}
+vote_county_2012_2016  <- 
+  vote_county_2012_2016 %>% 
+  mutate(
+    rep_margin_change = (prct_trump_2016 - prct_clinton_2016) - (prct_romney_2012 - prct_obama_2012),
+    outcome = if_else(prct_trump_2016 > prct_clinton_2016, "Republican", "Democrat")
+  )
+```
+
+
+
+#Final table for disease variables
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+final_disease_ish_table <- 
+  vote_county_2012_2016 %>% 
+  left_join(
+    all_disease,
+    by = c("FIPS")
+  ) %>% 
+  select(-c(totalvotes_2012, state:totalvotes_2016, outcome)) %>% 
+  correlate(method = "spearman") %>% 
+  select(rowname, prct_trump_2016, prct_clinton_2016, rep_margin_change) %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    filter(state %in% battle_states) %>% 
+    left_join(
+      all_disease,
+      by = c("FIPS")
+    ) %>% 
+    select(-c(totalvotes_2012, state:totalvotes_2016, outcome)) %>% 
+    correlate(method = "spearman") %>% 
+    select(
+      rowname, 
+      battle_prct_trump_2016 = prct_trump_2016, 
+      battle_prct_clinton_2016  = prct_clinton_2016, 
+      battle_rep_margin_change = rep_margin_change
+    ),
+    by = c("rowname")
+  ) %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    filter(state %in% flip_states) %>% 
+    left_join(
+      all_disease,
+      by = c("FIPS")
+    ) %>% 
+    select(-c(totalvotes_2012, state:totalvotes_2016, outcome)) %>% 
+    correlate(method = "spearman") %>% 
+    select(
+      rowname, 
+      flip_prct_trump_2016 = prct_trump_2016, 
+      flip_prct_clinton_2016  = prct_clinton_2016, 
+      flip_rep_margin_change = rep_margin_change
+    ),
+    by = c("rowname")
+  )
+```
+
+
+#all insurance
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+health_coverage <- 
+  medicaid_var %>% 
+  full_join(
+    no_hs_25_64_ins,
+    by = c("GEOID")
+  ) %>% 
+  full_join(
+    yes_hs_25_64_ins,
+    by = c("GEOID")
+  ) %>% 
+  full_join(
+    bachelor_25_64_ins,
+    by = c("GEOID")
+  ) %>% 
+  full_join(
+    wnh_dis,
+    by = c("GEOID")
+  ) %>% 
+  full_join(
+    w_dis,
+    by = c("GEOID")
+  ) %>% 
+  full_join(
+    sahie_ins,
+    by = c("GEOID" = "ID")
+  ) %>%
+  full_join(
+    health_costs %>% 
+    filter(year == 2016) %>% 
+    select(health_costs_keep) %>% 
+    rename("GEOID" = `State and County FIPS Code`) %>% 
+    mutate(GEOID = as.character(GEOID)),
+    by = c("GEOID")
+  ) 
+```
+
+
+Boxplots of CDC data
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+vote_county_2012_2016 %>% 
+  left_join(
+    all_crude_cdc_atlas %>% 
+    filter(year == 2016) %>% 
+    select(-year) %>% 
+    rename("FIPS" = CountyFIPS),
+    by = c("FIPS")
+  ) %>% 
+  select(outcome:physical_inactivity_crude) %>% 
+  gather(-outcome, key = "key", value = "value") %>% 
+  ggplot(aes(key, value, fill = outcome)) +
+  geom_boxplot() +
+  coord_flip() +
+  theme_bw()
+```
+
+
+Categories
+
+```{r}
+health_factors_lifestyle <- 
+  all_disease %>% 
+  select(
+    diabetes_crude:physical_inactivity_crude, `% Fair/Poor`, `% LBW`, `% Smokers`, 
+    `% Excessive Drinking`, `Teen Birth Rate`, `% Screened`, `% Vaccinated`, `Graduation Rate`,
+    `% Some College`, `% Children in Poverty`, `% Single-Parent Households`, `% Severe Housing Problems`,
+    
+  )
+
+health_access <- 
+  all_disease %>%
+  select(
+    `% With Access`, `PCP Rate`, `Dentist Rate`, `MHP Rate`, 
+  )
+
+#to_fix <- c(`Preventable Hosp. Rate`, )
+
+death_variables <- 
+  all_disease %>% 
+  select(
+    `Years of Potential Life Lost Rate` : `YPLL Rate (White)`, `Life Expectancy`,
+    `Life Expectancy (Black)`, `Life Expectancy (White)`, `Age-Adjusted Mortality`
+  )
+
+death_rates <- c("Violent Crime Rate", "Injury Death Rate")
+
+Other <- 
+  all_disease %>% 
+  select(`Physically Unhealthy Days`, `Mentally Unhealthy Days`, `Food Environment Index`, `Income Ratio`)
+
+
+GBD_categories <- 
+  respiratory_diseases %>% 
+  distinct(disease) %>% 
+  mutate(category = "Respiratory diseases") %>% 
+  rbind(
+    infectious_diseases %>%
+    distinct(disease) %>%
+    mutate(category = "Infectious diseases")
+  ) %>% 
+  rbind(
+    cvd_diseases %>% 
+    distinct(disease) %>% 
+    mutate(category = "Cardiovascular diseases")
+  ) %>% 
+  rbind(
+    cancer %>% 
+    distinct(disease) %>% 
+    mutate(category = "Cancers")
+  ) %>%
+  rbind(
+    deaths_of_despair %>% 
+    distinct(disease) %>% 
+    mutate(category = "Deaths of Despair")
+  ) %>%
+  rbind(
+    le_mortaliity_risk %>% 
+    distinct(disease) %>% 
+    mutate(category = "Life expectancy and Mortality")
+  )
+
+county_health_category <- read_xlsx(county_health_category_data)
+```
+
+
+All disease (can write)
+
+```{r}
+all_disease <- 
+  all_crude_cdc_atlas %>% 
+  filter(year == 2016) %>% 
+  select(-year) %>% 
+  rename("FIPS" = CountyFIPS) %>% 
+  full_join(
+    county_health_ranks %>% 
+      select(-County),
+    by = c("FIPS")
+  ) %>% 
+  full_join(
+    GBD_diseases,
+    by = c("FIPS")
+  ) %>% 
+  full_join(
+    opioid_rates %>% 
+      mutate(FIPS = as.character(FIPS)),
+    by = c("FIPS")
+  )
+
+#all_disease %>% write_csv("~/Downloads/all_disease_health_political.csv")
+```
+
+
+
+```{r}
+healthcare_var_cats <- 
+  medicaid_var %>% 
+  select(-GEOID) %>% 
+  names() %>% 
+  as.tibble() %>% 
+  mutate(category = "Insurance and Healthcare cost") %>% 
+  rbind(
+    no_hs_25_64_ins %>% 
+    select(-GEOID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost") 
+  ) %>% 
+  rbind(
+    yes_hs_25_64_ins %>% 
+    select(-GEOID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost")
+  ) %>% 
+  rbind(
+    bachelor_25_64_ins %>% 
+    select(-GEOID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost")
+  ) %>% 
+  rbind(
+    wnh_dis %>% 
+    select(-GEOID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost")
+  ) %>% 
+  rbind(
+    w_dis %>% 
+    select(-GEOID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost")
+  ) %>% 
+  rbind(
+    sahie_ins %>% 
+    select(-ID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost")
+  ) %>%
+  rbind(
+    health_costs %>% 
+    filter(year == 2016) %>% 
+    select(health_costs_keep) %>% 
+    rename("GEOID" = `State and County FIPS Code`) %>% 
+    select(-GEOID) %>% 
+    names() %>% 
+    as.tibble() %>% 
+    mutate(category = "Insurance and Healthcare cost")
+  ) 
+
+all_cats <- 
+  GBD_categories %>% 
+  rbind(county_health_category %>% rename("disease" = Disease, "category" = Category)) %>% 
+  rbind(tibble(disease = "opioid_prescribing_rate", category = "Health Behaviors")) %>% 
+  rbind(tibble(disease = "diabetes_crude", category = "Health Behaviors")) %>%
+  rbind(tibble(disease = "obesity_crude", category = "Health Behaviors")) %>%
+  rbind(tibble(disease = "physical_inactivity_crude", category = "Health Behaviors")) 
+```
+
+
+#Weighted correlation Table
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+all_states_fips <- vote_county_2012_2016 %>% filter(!is.na(FIPS)) %>% pull(FIPS)
+flip_states_fips <- vote_county_2012_2016 %>% filter(state %in% flip_states) %>% filter(!is.na(FIPS)) %>% pull(FIPS)
+battle_states_fips <- vote_county_2012_2016 %>% filter(state %in% battle_states) %>% filter(!is.na(FIPS)) %>% pull(FIPS)
+
+
+weight_cor_fun <- function(df){
+  
+  df <- df %>% select(value, index, Population) %>% drop_na()
+  weight_pop <- df$Population %>% log10()
+  matr <- df %>% select(-Population)
+  corr(matr, w = weight_pop) %>% tidy()
+}
+
+get_cor_weighted <- function(corr_var_name, fips_group){
+
+  all_disease %>% 
+    left_join(health_coverage, by = c("FIPS" = "GEOID")) %>% 
+    gather(-FIPS, key = "key", value = "value") %>% 
+    filter(FIPS %in% fips_group) %>% 
+    left_join(
+      vote_county_2012_2016 %>% 
+      select(corr_var_name, FIPS),
+      by = "FIPS"
+    ) %>% 
+    rename("index" = corr_var_name) %>% 
+    left_join(all_disease %>% select(Population, FIPS), by = "FIPS") %>% 
+    group_by(key) %>% 
+    nest() %>% 
+    mutate(model = map(data, weight_cor_fun)) %>% 
+    unnest(model) %>% 
+    select(key, x) 
+}
+
+
+#Here we will do the same for battleground and flip states
+#Finally sort by (category, and then pick another quantitative variable to sort on)
+
+full_table_disease_weighted1 <- 
+  get_cor_weighted("prct_trump_2016", all_states_fips) %>% rename("prct_trump_2016" = x) %>% 
+  left_join(get_cor_weighted("prct_clinton_2016", all_states_fips) %>% rename("prct_clinton_2016" = x), by = c("key")) %>% 
+  left_join(get_cor_weighted("rep_margin_change", all_states_fips) %>% rename("rep_margin_change" = x), by = c("key"))
+
+full_table_disease_weighted2 <- 
+  get_cor_weighted("prct_trump_2016", battle_states_fips) %>% rename("prct_trump_2016" = x) %>% 
+  left_join(get_cor_weighted("prct_clinton_2016", battle_states_fips) %>% rename("prct_clinton_2016" = x), by = c("key")) %>% 
+  left_join(get_cor_weighted("rep_margin_change", battle_states_fips) %>% rename("rep_margin_change" = x), by = c("key"))
+
+full_table_disease_weighted3 <- 
+  get_cor_weighted("prct_trump_2016", flip_states_fips) %>% rename("prct_trump_2016" = x) %>% 
+  left_join(get_cor_weighted("prct_clinton_2016", flip_states_fips) %>% rename("prct_clinton_2016" = x), by = c("key")) %>% 
+  left_join(get_cor_weighted("rep_margin_change", flip_states_fips) %>% rename("rep_margin_change" = x), by = c("key"))
+
+
+#full_table_disease_cats1: all
+#full_table_disease_cats2: battle 
+#full_table_disease_cats3: flip
+full_table_disease_weighted_cats1 <- 
+  full_table_disease_weighted1 %>% 
+  left_join(all_cats %>% rbind(healthcare_var_cats %>% rename("disease" = value)),by = c("key" = "disease")) %>% 
+  filter(!is.na(category)) 
+
+full_table_disease_weighted_cats2 <- 
+  full_table_disease_weighted2 %>% 
+  left_join(all_cats %>% rbind(healthcare_var_cats %>% rename("disease" = value)),by = c("key" = "disease")) %>% 
+  filter(!is.na(category)) 
+
+full_table_disease_weighted_cats3 <- 
+  full_table_disease_weighted3 %>% 
+  left_join(all_cats %>% rbind(healthcare_var_cats %>% rename("disease" = value)),by = c("key" = "disease")) %>% 
+  filter(!is.na(category)) 
+
+
+weighted_correlation_table <- 
+  full_table_disease_weighted_cats1 %>% 
+  left_join(full_table_disease_weighted_cats2, by = c("key", "category")) %>% 
+  left_join(full_table_disease_weighted_cats3, by = c("key", "category")) %>% 
+  select(-category, everything(), category) %>% 
+  arrange(desc(category)) 
+
+#write the table, fix the column names in excel
+#weighted_correlation_table %>% write_csv("~/Downloads/HP_Table1W_weighted_correlation.csv")
+```
+
+
+#Correlation Table (unweighted)
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+cor_fun <- function(df) cor.test(df$value, df$index, method = "pearson") %>% tidy()
+
+get_cor <- function(corr_var_name, fips_group){
+
+  all_disease %>% 
+    left_join(health_coverage, by = c("FIPS" = "GEOID")) %>% 
+    gather(-FIPS, key = "key", value = "value") %>% 
+    filter(FIPS %in% fips_group) %>% 
+    left_join(
+      vote_county_2012_2016 %>% 
+      select(corr_var_name, FIPS),
+      by = "FIPS"
+    ) %>% 
+    rename("index" = corr_var_name) %>% 
+    group_by(key) %>% 
+    nest() %>% 
+    mutate(model = map(data, cor_fun)) %>% 
+    unnest(model) %>% 
+    mutate(
+      corr_var_name = str_c(round(estimate, 2), "\n(", round(conf.low, 2), " to ", round(conf.high, 2), ")")
+    ) %>% 
+    select(key, corr_var_name) 
+}
+
+
+#Here we will do the same for battleground and flip states
+#Finally sort by (category, and then pick another quantitative variable to sort on)
+
+full_table_disease1 <- 
+  get_cor("prct_trump_2016", all_states_fips) %>% rename("prct_trump_2016" = corr_var_name) %>% 
+  left_join(get_cor("prct_clinton_2016", all_states_fips) %>% rename("prct_clinton_2016" = corr_var_name), by = c("key")) %>% 
+  left_join(get_cor("rep_margin_change", all_states_fips) %>% rename("rep_margin_change" = corr_var_name), by = c("key"))
+
+full_table_disease2 <- 
+  get_cor("prct_trump_2016", battle_states_fips) %>% rename("prct_trump_2016" = corr_var_name) %>% 
+  left_join(get_cor("prct_clinton_2016", battle_states_fips) %>% rename("prct_clinton_2016" = corr_var_name), by = c("key")) %>% 
+  left_join(get_cor("rep_margin_change", battle_states_fips) %>% rename("rep_margin_change" = corr_var_name), by = c("key"))
+
+full_table_disease3 <- 
+  get_cor("prct_trump_2016", flip_states_fips) %>% rename("prct_trump_2016" = corr_var_name) %>% 
+  left_join(get_cor("prct_clinton_2016", flip_states_fips) %>% rename("prct_clinton_2016" = corr_var_name), by = c("key")) %>% 
+  left_join(get_cor("rep_margin_change", flip_states_fips) %>% rename("rep_margin_change" = corr_var_name), by = c("key"))
+
+
+full_table_disease_cats1 <- 
+  full_table_disease1 %>% 
+  left_join(all_cats %>% rbind(healthcare_var_cats %>% rename("disease" = value)),by = c("key" = "disease")) %>% 
+  filter(!is.na(category)) 
+
+full_table_disease_cats2 <- 
+  full_table_disease2 %>% 
+  left_join(all_cats %>% rbind(healthcare_var_cats %>% rename("disease" = value)),by = c("key" = "disease")) %>% 
+  filter(!is.na(category)) 
+
+full_table_disease_cats3 <- 
+  full_table_disease3 %>% 
+  left_join(all_cats %>% rbind(healthcare_var_cats %>% rename("disease" = value)),by = c("key" = "disease")) %>% 
+  filter(!is.na(category)) 
+
+full_correlation_table <- 
+  full_table_disease_cats1 %>% 
+  left_join(full_table_disease_cats2, by = c("key", "category")) %>% 
+  left_join(full_table_disease_cats3, by = c("key", "category")) %>% 
+  select(-category, everything(), category) %>% 
+  arrange(desc(category)) 
+
+#Write the full correlation table (fix column names in excel)
+#full_correlation_table %>% write_csv("~/Downloads/Table1_correlation.csv")
+```
+
+
+#T tests and quartile differences table
+Same Analysis as correlations, except now, we compare republican and democrat counties (overall)
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+get_tests <- function(test_var_name){
+
+  all_disease %>% 
+    left_join(health_coverage, by = c("FIPS" = "GEOID")) %>% 
+    gather(-FIPS, key = "key", value = "value") %>% 
+    left_join(
+      vote_county_2012_2016 %>% 
+      select(test_var_name, FIPS),
+      by = "FIPS"
+    ) %>% 
+    rename("index" = test_var_name) %>% 
+    group_by(key) %>% 
+    nest() %>% 
+    mutate(model = map(data, cor_fun)) %>% 
+    unnest(model) %>% 
+    mutate(
+      test_var_name = str_c(round(estimate, 2), " (", round(conf.low, 2), " to ", round(conf.high, 2), ")")
+    ) %>% 
+    select(key, test_var_name) 
+}
+
+  
+data_for_tests <- 
+  all_disease %>% 
+  left_join(health_coverage, by = c("FIPS" = "GEOID")) %>% 
+  gather(-FIPS, key = "key", value = "value") %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    select(outcome, FIPS),
+    by = "FIPS"
+  ) %>% 
+  group_by(key, outcome) %>% 
+  summarise(value = list(value)) %>%
+  ungroup() %>% 
+  filter(!is.na(outcome)) %>% 
+  spread(outcome, value)
+
+outputs_data_for_tests <- 
+  data_for_tests %>% 
+  group_by(key) %>% 
+  summarise(
+    `% Mean Difference` = (mean(unlist(Republican), na.rm = TRUE) - mean(unlist(Democrat), na.rm = TRUE)) / mean(unlist(Democrat), na.rm = TRUE),
+    `% Median Difference` = (median(unlist(Republican), na.rm = TRUE) - median(unlist(Democrat), na.rm = TRUE)) / median(unlist(Democrat), na.rm = TRUE),
+    `% Top Quartile Difference` = (quantile(unlist(Republican), probs = c(.75), na.rm = TRUE) - 
+         quantile(unlist(Democrat), probs = c(.75), na.rm = TRUE)) / quantile(unlist(Democrat), probs = c(.75), na.rm = TRUE),
+    `% Bottom Quartile Difference` = (quantile(unlist(Republican), probs = c(.25), na.rm = TRUE) - 
+         quantile(unlist(Democrat), probs = c(.25), na.rm = TRUE)) / quantile(unlist(Democrat), probs = c(.25), na.rm = TRUE)
+  ) %>% 
+  ungroup() %>% 
+  left_join(
+    data_for_tests %>% 
+    group_by(key) %>% 
+    mutate(
+      `t-test p value` = t.test(unlist(Republican), unlist(Democrat))$p.value,
+      `t-test t statistic` = t.test(unlist(Republican), unlist(Democrat))$statistic
+    ) %>% 
+    select(key, `t-test p value`, `t-test t statistic`),
+    by = c("key")
+  ) %>% 
+  left_join(
+    all_cats %>% 
+    rbind(
+      healthcare_var_cats %>% 
+      rename("disease" = value)
+    ),
+    by = c("key" = "disease")
+  ) 
+
+
+t_test_quartile_table_2 <- 
+  outputs_data_for_tests %>% 
+  filter(!is.na(category)) %>% 
+  arrange(desc(category),`% Mean Difference`) %>% 
+  mutate_at(
+    vars(
+      `% Mean Difference`, `% Median Difference`, 
+      `% Top Quartile Difference`, `% Bottom Quartile Difference`
+    ), 
+    scales:::percent
+  )
+
+#Write the table
+#t_test_quartile_table_2 %>%write_csv("~/Table2_tmp.csv")
+```
+
+
+#Plots of republican margin shift and different variables
+
+```{r, fig.height=4, fig.width=6,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+vars_keep_rep_margin <- 
+  c("% 65 and over", "% Non-Hispanic White", "% Rural",
+    "diabetes_crude", "obesity_crude", "physical_inactivity_crude",
+     "% Smokers", "opioid_prescribing_rate", "Physically Unhealthy Days", 
+    "Uninsured %: All Incomes", "Years of Potential Life Lost Rate", "YPLL Rate (White)",
+    "Life Expectancy", "Life Expectancy (Black)", "Life Expectancy (White)"
+  )
+
+#"Mentally Unhealthy Days", "Years of Potential Life Lost Rate", "YPLL Rate (Black)", "YPLL Rate (White)","Uninsured %: <= 138% of Poverty", "Uninsured %: <= 400% of Poverty", 
+
+outcome_colors <- c(
+  alpha("blue", 0.1),
+  alpha("red", 0.1),
+  alpha("darkblue", 0.5),
+  alpha("darkred", 0.5)
+)
+
+all_disease %>% 
+  left_join(health_coverage, by = c("FIPS" = "GEOID")) %>% 
+  gather(-FIPS, key = "key", value = "value") %>% 
+  filter(FIPS %in% flip_states_fips) %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+        mutate(
+          winner_2012 = if_else(prct_obama_2012 > prct_romney_2012, "obama", "romney"),
+          winner_2016 = if_else(prct_clinton_2016 > prct_trump_2016, "clinton", "trump")
+        ) %>%
+        unite(col = "outcome", winner_2012:winner_2016, sep = "_") %>% 
+        mutate(
+          outcome_fin =
+            fct_recode(
+              outcome,
+              stay_dem = "obama_clinton",
+              stay_rep = "romney_trump",
+              flip_rep_to_dem = "romney_clinton",
+              flip_dem_to_rep = "obama_trump"
+            ) %>% 
+            fct_relevel("stay_dem", "stay_rep", "flip_rep_to_dem", "flip_dem_to_rep")
+        ) %>% 
+      select(FIPS, rep_margin_change, totalvotes_2016, outcome_fin),
+    by = "FIPS"
+  ) %>% 
+  filter(key %in% vars_keep_rep_margin) %>% 
+  mutate(key = factor(key, levels = vars_keep_rep_margin)) %>% 
+  ggplot(aes(rep_margin_change, value)) +
+  geom_point(aes(size = totalvotes_2016, color = outcome_fin, alpha = outcome_fin)) +
+  geom_smooth(color = "black") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_size_continuous(guide = FALSE) +
+  scale_x_continuous(labels = scales:::percent) +
+  scale_alpha_manual(values = c(0.1, 0.1, 0.5, 0.5), guide = FALSE) +
+  scale_color_manual(
+    name = "2012 to 2016 outcome",
+    labels = c("stayed Dem", "stayed GOP", "flipped to Dem", "flipped to GOP"),
+    values = outcome_colors
+  ) +
+  labs(x = "Republican Margin Shift (2016 margin - 2012 margin)") +
+  facet_wrap(~ key, scales = "free_y", ncol = 3) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom", 
+    strip.text = element_text(face="bold", size=10)
+  )
+  
+```
+
+
+#Compare states on Medicaid expansion- Medicaid data: https://data.medicaid.gov/widgets/n5ce-jxme
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+medicaid_state <- read_csv(medicaid_expansion_data)
+
+medicaid_state_expansion <- 
+  medicaid_state %>% 
+  distinct(`State Expanded Medicaid`, `State Name`)
+
+```
+
+
+#State election data
+
+```{r, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+state_data <- 
+  read_csv(state_election_data) %>% 
+  filter(year == 2016) %>% 
+  filter(candidate %in% c("Clinton, Hillary", "Trump, Donald J.")) %>% 
+  filter(writein == FALSE) %>% 
+  distinct(state, party, candidatevotes) %>%
+  spread(party, candidatevotes) %>% 
+  mutate(winner = if_else(democrat > republican, "Democrat", "Republican")) %>% 
+  select(state, winner)
+```
+
+
+#Plot Insurance rate changes based on medicaid expansion and state presidential voting
+
+```{r, fig.height=5, fig.width=6, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+insured_change_data <- 
+  vote_county_2012_2016 %>% 
+  left_join(
+    sahie_insurance %>% 
+    filter(Year %in% c(2008, 2017)) %>% 
+    select(ID, Year, `Income Category`, `Uninsured: %`) %>% 
+    filter(`Income Category` == "All Incomes") %>% 
+    spread(Year, `Uninsured: %`),
+    by = c("FIPS" = "ID")
+  ) %>% 
+  left_join(medicaid_state_expansion, by = c("state" = "State Name")) %>% 
+  mutate(`Insured rate change` = `2008` - `2017`) 
+
+insured_change_lowest <- 
+  vote_county_2012_2016 %>% 
+  left_join(
+    sahie_insurance %>% 
+    filter(Year %in% c(2008, 2017)) %>% 
+    select(ID, Year, `Income Category`, `Uninsured: %`) %>% 
+    filter(`Income Category` == "<= 138% of Poverty") %>% 
+    spread(Year, `Uninsured: %`),
+    by = c("FIPS" = "ID")
+  ) %>% 
+  left_join(medicaid_state_expansion, by = c("state" = "State Name")) %>% 
+  mutate(`Insured rate change <= 138% of Poverty` = `2008` - `2017`) %>% 
+  select(FIPS, `Insured rate change <= 138% of Poverty`, state)
+
+insured_change_middle <- 
+  vote_county_2012_2016 %>% 
+  left_join(
+    sahie_insurance %>% 
+    filter(Year %in% c(2008, 2017)) %>% 
+    select(ID, Year, `Income Category`, `Uninsured: %`) %>% 
+    filter(`Income Category` == "<= 400% of Poverty") %>% 
+    spread(Year, `Uninsured: %`),
+    by = c("FIPS" = "ID")
+  ) %>% 
+  left_join(medicaid_state_expansion, by = c("state" = "State Name")) %>% 
+  mutate(`Insured rate change <= 400% of Poverty` = `2008` - `2017`) %>% 
+  select(FIPS, `Insured rate change <= 400% of Poverty`)
+
+all_inc_state_data_insurance <- 
+  insured_change_data %>% 
+  left_join(
+    insured_change_lowest %>% 
+    group_by(state) %>% 
+    summarise(median_change = median(`Insured rate change <= 138% of Poverty`, na.rm = TRUE)) %>% 
+    ungroup(),
+    by = c("state")
+  ) %>% 
+  left_join(
+    state_data,
+    by = c("state")
+  ) %>% 
+  mutate(state = fct_reorder(state, median_change)) %>% 
+  left_join(
+    insured_change_lowest %>% select(-state), by = c("FIPS")
+  ) %>% 
+  left_join(
+    insured_change_middle, by = c("FIPS")
+  )
+
+
+colors_plot <- 
+  all_inc_state_data_insurance %>% 
+  distinct(state) %>% 
+  arrange(state) %>% 
+  left_join(state_data, by = "state") %>% 
+  mutate(color = if_else(winner == "Republican", "red", "blue"))
+
+color_a <- colors_plot$color
+
+#want to add state colors for this
+plot_insurance_data <- 
+  all_inc_state_data_insurance %>% 
+  select(
+    state, `State Expanded Medicaid`, `Insured rate change`, 
+    `Insured rate change <= 138% of Poverty`, `Insured rate change <= 400% of Poverty`
+  ) %>% 
+  gather(-state, -`State Expanded Medicaid`, key = "key", value = "value") %>% 
+  filter(key != "Insured rate change <= 400% of Poverty") 
+
+plot_insurance_data  %>% 
+  mutate(key = factor(key, levels = c("Insured rate change <= 138% of Poverty", "Insured rate change"))) %>% 
+  mutate(
+    `State Expanded Medicaid` = if_else(`State Expanded Medicaid` == "N", "No", "Yes"),
+    `State Expanded Medicaid` = factor(`State Expanded Medicaid`, levels = c("No", "Yes"))
+  ) %>% 
+  ggplot(aes(state, value, fill = `State Expanded Medicaid`)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(x = "State", y = "Insurance rate change from 2008 to 2017") +
+  facet_grid(.~ key) + 
+  theme_bw() +
+  theme(axis.text.y=element_text(colour=color_a))
+```
+
+
+
+#Plot life expectancy change by party over 1980 to 2014 period
+
+
+```{r,  results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+le_mortaliity_risk %>% 
+  filter(disease == "Life expectancy") %>% 
+  filter(!is.na(FIPS)) %>% 
+  mutate(
+    FIPS = as.character(FIPS),
+    `% Change in Life Expectancy, 1980-2014` = as.double(`% Change in Life Expectancy, 1980-2014`)
+  ) %>% 
+  left_join(vote_county_2012_2016, by = "FIPS") %>% 
+  filter(!is.na(outcome)) %>% 
+  select(FIPS, outcome, `% Change in Life Expectancy, 1980-2014`) %>% 
+  gather(-FIPS, -outcome, key = "key", value = "value") %>% 
+  mutate(outcome = fct_relevel(outcome, c("Republican", "Democrat"))) %>% 
+  ggplot(aes(outcome, value, fill = outcome)) +
+  geom_boxplot() +
+  labs(
+    x = "Political Party of County in 2016",
+    y = "% Change in Life Expectancy, 1980-2014",
+    fill = "Party"
+  ) +
+  theme_bw()
+```
+
+
+#Mortality risk plots
+
+```{r, fig.width=7, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+le_tmp <- 
+  le_mortaliity_risk %>% 
+  filter(!is.na(FIPS)) %>% 
+  mutate(
+    FIPS = as.character(FIPS),
+    `% Change in Life Expectancy, 2005-2014` = 
+      (`Life expectancy, 2014*` - `Life expectancy, 2005*`) / (`Life expectancy, 2005*`),
+    `% Change in Mortality risk, 2005-2014` = 
+      (`Mortality risk, 2014*` - `Mortality risk, 2005*`) / (`Mortality risk, 2005*`)
+  ) %>% 
+  left_join(vote_county_2012_2016, by = "FIPS") %>% 
+  filter(!is.na(outcome)) %>% 
+  left_join(medicaid_state_expansion, by = c("state" = "State Name")) %>% 
+  select(
+    FIPS, outcome, disease,`% Change in Life Expectancy, 2005-2014`, 
+    `% Change in Mortality risk, 2005-2014`, `State Expanded Medicaid`
+  ) 
+
+le_tmp %>% 
+  filter(!is.na(`% Change in Life Expectancy, 2005-2014`)) %>% 
+  select(FIPS, outcome, disease, value = `% Change in Life Expectancy, 2005-2014`, `State Expanded Medicaid`) %>% 
+  rbind(
+    le_tmp %>% 
+    filter(!is.na(`% Change in Mortality risk, 2005-2014`)) %>% 
+    select(FIPS, outcome, disease, value = `% Change in Mortality risk, 2005-2014`, `State Expanded Medicaid`)
+  ) %>% 
+  mutate(outcome = fct_relevel(outcome, c("Republican", "Democrat"))) %>% 
+  ggplot(aes(outcome, value, fill = `State Expanded Medicaid`)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(labels = scales:::percent) +
+  labs(
+    x = "County in State with Medicaid Expansion (Y/N)",
+    y = "% Change in Life Expectancy, 1980-2014",
+    fill = "State Expanded Medicaid"
+  ) +
+  facet_wrap(~ disease, scales = "free_y") +
+  theme_bw()
+```
+
+
+#Plot boxplots of key variables by political party
+
+```{r, fig.height=6, fig.width=8,results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+vars_to_vis <- 
+  c(
+    "% Food Insecure", "% Insufficient Sleep",  "opioid_prescribing_rate", "Drug Overdose Mortality Rate",
+     "% Smokers", "physical_inactivity_crude", "obesity_crude", "diabetes_crude",
+    "Cardiovascular diseases", "Age-Adjusted Mortality", "Age-Adjusted Mortality (White)", "Life Expectancy",
+    "% With Access", "% Vaccinated", "Uninsured %: <= 138% of Poverty", "Uninsured %: All Incomes"
+  )
+
+#"Food Environment Index", "Injury Death Rate", "Mortality risk, age 25-45", "Mortality risk, age 45-65", "Mortality risk, age 65-85", "PCP Rate", 
+
+all_disease %>% 
+  left_join(health_coverage, by = c("FIPS" = "GEOID")) %>% 
+  gather(-FIPS, key = "key", value = "value") %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    select(outcome, FIPS),
+    by = "FIPS"
+  ) %>% 
+  filter(key %in% vars_to_vis) %>% 
+  filter(!is.na(outcome)) %>% 
+  mutate(outcome = fct_relevel(outcome, c("Democrat", "Republican"))) %>% 
+  mutate(key = factor(key, levels = vars_to_vis)) %>% 
+  ggplot(aes(outcome, value, fill = outcome)) +
+  geom_boxplot() +
+  scale_fill_manual(values=c("dodgerblue2", "red3")) +
+  facet_wrap(~ key, ncol = 4, scales = "free") +
+  theme_bw() +
+  theme(
+    strip.text = element_text(face="bold", size=10),
+    axis.title.x=element_blank(),
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank()
+  ) 
+
+```
+
+
+#Plot key variable changes over time
+Variables that we can capture dynamics for: obesity, physical inactivity, diabetes, Uninsurance in different groups, GDB:Mortality risk of different ages,Deaths of despair over time, Cardiovascularrr disease over time
+
+```{r, fig.height=6, fig.width=8, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+crudes_time <- 
+  all_crude_cdc_atlas %>% 
+  gather(-CountyFIPS, -year, key = "key", value = "value") %>% 
+  rename("FIPS" = CountyFIPS)
+
+sahie_time <- 
+  sahie_insurance %>% 
+  select(ID, Year, `Income Category`, `Uninsured: %`) %>% 
+  mutate(key = str_c("Uninsured %: ",`Income Category`)) %>% 
+  rename("FIPS" = ID, "year" = Year, value = `Uninsured: %`) %>% 
+  select(FIPS, year, key, value)
+ 
+deaths_of_despair_time <- 
+  deaths_of_despair %>% 
+  select(FIPS, disease, `Mortality Rate, 1980*`:`Mortality Rate, 2014*`) %>% 
+  filter(!is.na(FIPS)) %>% 
+  gather(-FIPS, -disease, key = "year", value = "value") %>% 
+  mutate(year = parse_number(year)) %>% 
+  mutate(key = str_c(disease, ": Mortality Rate")) %>% 
+  select(FIPS, year, key, value) %>% 
+  filter(
+    !(key == "Alcohol use disorders: Mortality Rate" & value > 8),
+    !(key == "Drug use disorders: Mortality Rate" & value > 20),
+    !(key == "Interpersonal violence: Mortality Rate" & value > 25),
+    !(key == "Self-harm: Mortality Rate" & value > 25)
+  )
+ 
+mortality_risk_time <- 
+  le_mortaliity_risk %>% 
+  select(FIPS, disease, `Mortality risk, 1980*`:`Mortality risk, 2014*`) %>% 
+  filter(!is.na(FIPS), !is.na(`Mortality risk, 1980*`)) %>% 
+  gather(-FIPS, -disease, key = "year", value = "value") %>% 
+  mutate(year = parse_number(year)) %>% 
+  mutate(key = disease) %>% 
+  select(FIPS, year, key, value)
+
+le_time <- 
+  le_mortaliity_risk %>% 
+  select(FIPS, disease, `Life expectancy, 1980*`:`Life expectancy, 2014*`) %>% 
+  filter(!is.na(FIPS), !is.na(`Life expectancy, 1980*`)) %>% 
+  gather(-FIPS, -disease, key = "year", value = "value") %>% 
+  mutate(year = parse_number(year)) %>% 
+  mutate(key = "Life Expectancy") %>% 
+  select(FIPS, year, key, value)
+
+vars_to_keep_time <- 
+  c("diabetes_crude", "obesity_crude", "physical_inactivity_crude",
+    "Mortality risk, age 0-5", "Mortality risk, age 5-25", "Mortality risk, age 25-45",
+    "Mortality risk, age 45-65", "Mortality risk, age 65-85", "Life Expectancy",
+    "Self-harm: Mortality Rate","Uninsured %: <= 138% of Poverty","Uninsured %: All Incomes") 
+
+
+crudes_time %>% 
+  rbind(sahie_time) %>% 
+  rbind(deaths_of_despair_time) %>% 
+  rbind(mortality_risk_time) %>% 
+  rbind(le_time) %>% 
+  mutate(FIPS = as.character(FIPS)) %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    select(FIPS, outcome),
+    by = "FIPS"
+  ) %>% 
+  filter(!is.na(outcome)) %>% 
+  filter(key %in% vars_to_keep_time) %>% 
+  mutate(key = factor(key, levels = vars_to_keep_time)) %>% 
+  mutate(year = as_factor(year)) %>% 
+  ggplot(aes(year, value, fill = outcome)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_fill_manual(values=c("dodgerblue2", "red3")) +
+  facet_wrap(~ key, scales = "free", ncol = 3) +
+  theme_bw() +
+  theme(
+    strip.text = element_text(face="bold", size=10),
+    axis.text.x = element_text(angle = 50, hjust = 1)
+  ) 
+```
+
+
+#Plot of differences between dem and republican values over time (Median)
+
+```{r, fig.height=4, fig.width=8,results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+life_vars <- c("Life Expectancy",
+      "Mortality risk, age 0-5", "Mortality risk, age 25-45", "Mortality risk, age 45-65",			
+      "Mortality risk, age 5-25",	"Mortality risk, age 65-85")
+
+health_behaviors <- c("diabetes_crude", "obesity_crude", "physical_inactivity_crude", 
+      "Uninsured %: All Incomes", "Uninsured %: <= 138% of Poverty")
+
+cr_fig_1 <- 
+  crudes_time %>% 
+  rbind(sahie_time) %>% 
+  rbind(deaths_of_despair_time) %>% 
+  rbind(mortality_risk_time) %>% 
+  rbind(le_time) %>% 
+  mutate(FIPS = as.character(FIPS)) %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    select(FIPS, outcome),
+    by = "FIPS"
+  ) %>% 
+  filter(!is.na(outcome)) %>% 
+  filter(key %in% c(health_behaviors)) %>% 
+  group_by(year, key, outcome) %>% 
+  summarise(median_val = median(value, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  spread(outcome, median_val) %>% 
+  mutate(diff = (Republican - Democrat) / Democrat) %>% 
+  mutate(year = as.integer(year)) %>% 
+  mutate(year = make_date(year = year)) %>% 
+  ggplot(aes(year, diff, color = key)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(labels = scales:::percent) +
+  scale_x_date() +
+  labs(
+    x = "Year",
+    y = "Percent difference in nedian value (Rep - Dem)/(Dem)",
+    color = "Health Behavior"
+  ) +
+  theme_bw()
+
+cr_fig_2 <- 
+  crudes_time %>% 
+  rbind(sahie_time) %>% 
+  rbind(deaths_of_despair_time) %>% 
+  rbind(mortality_risk_time) %>% 
+  rbind(le_time) %>% 
+  mutate(FIPS = as.character(FIPS)) %>% 
+  left_join(
+    vote_county_2012_2016 %>% 
+    select(FIPS, outcome),
+    by = "FIPS"
+  ) %>% 
+  filter(!is.na(outcome)) %>% 
+  filter(key %in% c(life_vars)) %>% 
+  group_by(year, key, outcome) %>% 
+  summarise(median_val = median(value, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  spread(outcome, median_val) %>% 
+  mutate(diff = (Republican - Democrat) / Democrat) %>% 
+  mutate(year = as.integer(year)) %>% 
+  mutate(year = make_date(year = year)) %>% 
+  ggplot(aes(year, diff, color = key)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(labels = scales:::percent) +
+  scale_x_date() +
+  labs(
+    x = "Year",
+    y = "Percent difference in nedian value (Rep - Dem)/(Dem)",
+    color = "Life expectancy and Mortality"
+  ) +
+  theme_bw()
+
+grid.arrange(cr_fig_1, cr_fig_2, ncol = 2)
+```
+
+
+Correlation plot for exploration
+
+```{r, fig.height=8, fig.width=8, results="hide", echo=FALSE, message=FALSE, warning=FALSE}
+vote_county_2012_2016 %>% 
+  left_join(county_health_2019 %>% select(-County, -State), by = c("FIPS")) %>% 
+  select(
+    prct_trump_2016, prct_clinton_2016, prct_romney_2012, prct_obama_2012,
+    HealthOutcomes_Rank : `PRCNT_Severe Housing Problems`
+  ) %>% 
+  cor(use = "complete.obs") %>% 
+  corrplot(order = "hclust", method = "circle")
+```
+
+
+#Preexisting conditions by state
+
+```{r}
+preexiting_state <- read_xlsx(preexiting_state_data , sheet = 2, skip = 2) 
+
+preexiting_state %>% 
+  filter(State != "National") %>% 
+  left_join(state_data, by = c("State" = "state")) %>% 
+  gather(-State, -winner, key = "key", value = "value") %>% 
+  group_by(winner, key) %>% 
+  summarise(value = sum(value, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  filter(key != "Percent of Nonelderly with Pre-existing Condition") %>% 
+  ggplot(aes(key, value, fill = winner)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = scales::comma) +
+  coord_flip() +
+  theme_bw()
+```
+
+
+Absolute preexiting conditions by political party (state presidential)
+
+```{r}
+preexiting_state %>% 
+  filter(State != "National") %>% 
+  left_join(state_data, by = c("State" = "state")) %>% 
+  select(State, winner, key = `Nonelderly with Pre-existing Condition`) %>% 
+  group_by(winner) %>% 
+  summarise(key = sum(key, na.rm = TRUE)) %>% 
+  ungroup()
+```
+
+
+Percent preexiting conditions by political party (state presidential)
+
+```{r}
+preexiting_state %>% 
+  filter(State != "National") %>% 
+  left_join(state_data, by = c("State" = "state")) %>% 
+  select(State, winner, key = `Percent of Nonelderly with Pre-existing Condition`) %>% 
+  group_by(winner) %>% 
+  summarise(key = mean(key, na.rm = TRUE)) %>% 
+  ungroup()
+```
+
+
+
+
